@@ -92,25 +92,32 @@ class CapCutClient:
         default_voice = "BV074_streaming"
         default_resource_id = "7102355709945188865"
 
-        target_voice = voice or default_voice
-        target_res = resource_id
+        target_voice = (voice or "").strip()
+        target_res = (resource_id or "").strip()
+
+        # If target_voice is all digits, user might have passed resource_id as voice
+        if target_voice.isdigit() and not target_res:
+            target_res = target_voice
+            target_voice = ""
 
         # Try lookup in Voice.json catalog
         all_voices = self.list_voices(catalog_path=catalog_path)
-        target_lower = target_voice.lower().strip() if target_voice else ""
 
-        # 1. Primary match: voice_type
-        for v in all_voices:
-            if v.voice_type.lower() == target_lower:
-                return v.voice_type, target_res or v.resource_id
+        # 1. Match by explicit resource_id
+        if target_res:
+            for v in all_voices:
+                if v.resource_id == target_res:
+                    return v.voice_type, v.resource_id
 
-        # 2. Secondary match: display_name or resource_id
-        for v in all_voices:
-            if v.display_name.lower() == target_lower or (target_res and v.resource_id == target_res):
-                return v.voice_type, target_res or v.resource_id
+        # 2. Match by voice_type or display_name
+        if target_voice:
+            target_lower = target_voice.lower()
+            for v in all_voices:
+                if v.voice_type.lower() == target_lower or v.display_name.lower() == target_lower:
+                    return v.voice_type, target_res or v.resource_id
 
         # Fallback to provided values or defaults
-        resolved_voice = target_voice
+        resolved_voice = target_voice or default_voice
         resolved_res = target_res or default_resource_id
         return resolved_voice, resolved_res
 
@@ -124,6 +131,7 @@ class CapCutClient:
         voice: Optional[str] = "BV074_streaming",
         resource_id: Optional[str] = None,
         rate: str = "1.0",
+        audio_format: str = "mp3",
     ) -> Tuple[str, Dict[str, str], str]:
         """
         Build URL, headers, and body string for creating a new TTS task.
@@ -147,12 +155,15 @@ class CapCutClient:
             "scenario": "video_editor",
         }
         voice_blocks = []
+        fmt = audio_format.lower().strip()
         for text in text_list:
+            # Trailing space busts old server-side MP3 cache and forces CapCut to return native 24kHz WAV (RIFF)
+            safe_text = text if (fmt != "wav" or text.endswith(" ")) else text + " "
             voice_blocks.append(
                 f'    <voice name="{voice_type}" mock_tone_info="" platform="sami" '
                 f'resource_id="{final_resource_id}" emotion="" emotion_scale="0" style="" role="" '
                 f'moyin_emotion="" is_clone_tone="false" need_subtitle_timestamp="false">\n'
-                f'        <prosody rate="{rate}">{escape_xml(text)}</prosody>\n'
+                f'        <prosody rate="{rate}">{escape_xml(safe_text)}</prosody>\n'
                 f'    </voice>'
             )
         ssml = (
@@ -162,7 +173,7 @@ class CapCutClient:
         )
         extra_info = compact_json({"benefit_info": {}})
         payload = {
-            "audio_format": "mp3",
+            "audio_format": audio_format.lower().strip(),
             "babi_param": compact_json(babi),
             "credit_disable": False,
             "extra_info": extra_info,
@@ -317,13 +328,20 @@ class CapCutClient:
         voice: Optional[str] = "BV074_streaming",
         resource_id: Optional[str] = None,
         rate: str = "1.0",
+        audio_format: str = "mp3",
     ) -> Dict[str, Any]:
         """
         Submit a new Text-to-Speech task to CapCut API.
         """
         if self.session is None:
             raise CapCutError("The 'requests' package is required. Run 'pip install requests'.")
-        url, headers, body_text = self.build_tts_new_request(texts, voice, resource_id, rate)
+        url, headers, body_text = self.build_tts_new_request(
+            texts=texts,
+            voice=voice,
+            resource_id=resource_id,
+            rate=rate,
+            audio_format=audio_format,
+        )
         resp = self.session.post(url, headers=headers, data=body_text.encode("utf-8"), timeout=60)
         return _checked_json_response(resp, "create_tts_task")
 
@@ -347,6 +365,7 @@ class CapCutClient:
         voice: Optional[str] = "BV074_streaming",
         resource_id: Optional[str] = None,
         rate: str = "1.0",
+        audio_format: str = "mp3",
         wait: bool = True,
         poll_interval: float = 1.0,
         timeout: float = 60.0,
@@ -354,7 +373,13 @@ class CapCutClient:
         """
         Convenience method: Submits TTS task and polls until completed.
         """
-        create_res = self.create_tts_task(texts, voice, resource_id, rate)
+        create_res = self.create_tts_task(
+            texts=texts,
+            voice=voice,
+            resource_id=resource_id,
+            rate=rate,
+            audio_format=audio_format,
+        )
         if not wait:
             return create_res
 
@@ -371,7 +396,7 @@ class CapCutClient:
             query_tasks = (query_res.get("data") or {}).get("tasks") or []
             if query_tasks:
                 status = query_tasks[0].get("status")
-                if status == "success":
+                if status in ("success", "succeed"):
                     return query_res
                 elif status == "failed":
                     raise CapCutTaskError(f"TTS Task failed: {query_res}")
@@ -461,7 +486,7 @@ class CapCutClient:
             query_tasks = (query_res.get("data") or {}).get("tasks") or []
             if query_tasks:
                 status = query_tasks[0].get("status")
-                if status == "success":
+                if status in ("success", "succeed"):
                     return query_res
                 elif status == "failed":
                     raise CapCutTaskError(f"STT Task failed: {query_res}")
@@ -485,6 +510,62 @@ class CapCutClient:
             return SubtitleResult.from_payload(payload_dict)
         except Exception as exc:
             raise CapCutError(f"Failed to parse subtitle payload: {exc}") from exc
+
+    def extract_speech_urls(self, query_response: Dict[str, Any]) -> List[str]:
+        """
+        Extract direct audio URLs from a completed TTS query response payload.
+        """
+        try:
+            tasks = (query_response.get("data") or {}).get("tasks") or []
+            if not tasks:
+                return []
+            raw_payload = tasks[0].get("payload", "{}")
+            if isinstance(raw_payload, str):
+                payload_dict = json.loads(raw_payload)
+            else:
+                payload_dict = raw_payload
+            subtitles = payload_dict.get("audio_subtitles") or []
+            return [item["speech_url"] for item in subtitles if "speech_url" in item]
+        except Exception as exc:
+            raise CapCutError(f"Failed to parse TTS payload: {exc}") from exc
+
+    def download_file(self, url: str, output_path: Union[str, Path]) -> Path:
+        """
+        Download remote audio file to local path.
+        If output_path has .wav extension but downloaded bytes are MP3 (e.g. from server cache),
+        automatically converts to standard 16-bit 24kHz Mono WAV via ffmpeg.
+        """
+        if self.session is None:
+            raise CapCutError("The 'requests' package is required. Run 'pip install requests'.")
+        resp = self.session.get(url, timeout=60)
+        resp.raise_for_status()
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        content = resp.content
+
+        # If .wav is requested but server returned mp3 (cache)
+        if out.suffix.lower() == ".wav" and not content.startswith(b"RIFF"):
+            import shutil, subprocess
+            if shutil.which("ffmpeg"):
+                temp_mp3 = out.with_suffix(".tmp.mp3")
+                with open(temp_mp3, "wb") as fp:
+                    fp.write(content)
+                try:
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", str(temp_mp3), "-ar", "24000", "-ac", "1", str(out)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=True,
+                    )
+                finally:
+                    if temp_mp3.exists():
+                        temp_mp3.unlink()
+                return out
+
+        with open(out, "wb") as fp:
+            fp.write(content)
+        return out
+
 
     def list_voices(
         self, lang: Optional[str] = None, catalog_path: Optional[Union[str, Path]] = None

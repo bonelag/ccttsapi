@@ -25,10 +25,10 @@ def main():
     client = CapCutClient()
 
     # Text to convert to speech
-    text = "Xin chào bạn! Thư viện CapCut TTS API giúp tạo giọng đọc dễ dàng."
+    text = "xin chào bạn, đây là giọng nói nghe thử nghiệm"
 
     # Specify voice_type (e.g. "BV421_vivn_streaming" or "BV074_streaming")
-    voice_type_input = "BV421_vivn_streaming"
+    voice_type_input = "BV074_streaming"
 
     print(f"1. Resolving voice_type: '{voice_type_input}'...")
     voice_type, resource_id = client.resolve_voice(voice=voice_type_input)
@@ -50,10 +50,19 @@ def main():
         result = client.generate_speech(
             texts=text,
             voice=voice_type_input,
-            wait=False # Set to True when connecting to live API endpoint
+            wait=True,
+            timeout=30.0,
         )
-        print("   Task Submitted Successfully!")
-        print("   Response:", result)
+        print("   Task Completed Successfully!")
+        urls = client.extract_speech_urls(result)
+        if urls:
+            audio_url = urls[0]
+            print(f"   Audio URL: {audio_url}")
+            output_file = Path("output.mp3")
+            client.download_file(audio_url, output_file)
+            print(f"   Saved audio to: {output_file.resolve()} ({output_file.stat().st_size} bytes)")
+        else:
+            print("   No audio URL found in response.")
     except CapCutError as exc:
         print(f"   Client Error: {exc}")
     except Exception as exc:
