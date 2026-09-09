@@ -99,18 +99,61 @@ SUPPORTED_VOICES = [
     },
 ]
 
-# Cấu hình mặc định (có thể điền ID số, ID chữ, hoặc Tên)
-DEFAULT_VOICE = "BV074_streaming"  # 1 Hoặc "7637456432522218773", "Ban Mai", "9"
-DEFAULT_BATCH_SIZE = 25           # Số câu trong 1 lần gọi API (khuyến nghị: 5-10, tránh CapCut server quá tải)
+# Cấu hình mặc định:
+# DEFAULT_VOICE:
+# - "Auto": Tự động nhìn DEFAULT_OUTPUT_DIR để nhận diện đúng giọng đọc tương ứng.
+# - Hoặc điền cố định: ID số ("7102355709945188865"), ID chữ ("BV074_streaming"), Tên ("Cô Gái Hoạt Ngôn"), STT ("4")
+DEFAULT_VOICE = "Auto"
+DEFAULT_BATCH_SIZE = 30           # Số câu trong 1 lần gọi API (hỗ trợ min 1, max 100)
 DEFAULT_AUDIO_FORMAT = "wav"       # Định dạng âm thanh: "wav" (16-bit 24kHz PCM không nén) hoặc "mp3"
 DEFAULT_METADATA_PATH = "metadata.csv"
-DEFAULT_OUTPUT_DIR = "HoatNgon"    # Thư mục lưu file audio
+DEFAULT_OUTPUT_DIR = "NamMeoMo"    # Thư mục lưu file audio
 DEFAULT_RATE = "1.0"              # Tốc độ đọc
 DEFAULT_DELAY = 1.0               # Thời gian nghỉ (giây) giữa các batch
-DEFAULT_THREADS = 4               # Số luồng chạy đồng thời (1 đến 5 luồng)
+DEFAULT_THREADS = 10               # Số luồng chạy đồng thời (hỗ trợ min 1, max 50 luồng)
 DEFAULT_TIMEOUT = 90.0            # Thời gian chờ tối đa (giây) cho mỗi task TTS
 MAX_RETRIES = 3                   # Số lần thử lại tối đa cho mỗi batch nếu gặp lỗi
 
+# Bảng ánh xạ tên thư mục output sang giọng đọc tương ứng
+FOLDER_TO_VOICE = {
+    "hoatngon": "BV074_streaming",                       # Cô Gái Hoạt Ngôn
+    "nhongotngao": "BV421_vivn_streaming",               # Nhỏ Ngọt Ngào
+    "giongbe": "BV074_streaming_dsp",                    # Giọng Bé
+    "nammeomo": "BV075_streaming_vibrato_dsp",           # Việt Méo / Nam Méo
+    "vietmeo": "BV075_streaming_vibrato_dsp",            # Việt Méo
+    "mai": "BV562_streaming",                            # Mai
+    "nuphothong": "vi_female_huong",                     # Giọng Nữ Phổ Thông
+    "banmai": "multi_female_yangguangnv_uranus_bigtts",  # Ban Mai
+    "reviewnew": "multi_female_richgirl_uranus_bigtts",  # Review Phim new
+    "reviewphimnew": "multi_female_richgirl_uranus_bigtts",
+    "hoaimy": "vi-VN-HoaiMyNeural",                      # Hoai My
+    "namminh": "vi-VN-NamMinhNeural",                    # Nam Minh
+}
+
+
+def detect_voice_from_folder(folder_name: str) -> Optional[str]:
+    """Tự động nhận diện voice_type từ tên thư mục output."""
+    if not folder_name:
+        return None
+    f_norm = folder_name.lower().replace("_", "").replace("-", "").replace(" ", "")
+
+    # 1. Tra cứu trực tiếp bảng FOLDER_TO_VOICE
+    if f_norm in FOLDER_TO_VOICE:
+        return FOLDER_TO_VOICE[f_norm]
+
+    # 2. So sánh với name hoặc voice_type trong SUPPORTED_VOICES
+    for v in SUPPORTED_VOICES:
+        v_name_norm = v["name"].lower().replace("_", "").replace("-", "").replace(" ", "")
+        v_type_norm = v["voice_type"].lower().replace("_", "").replace("-", "").replace(" ", "")
+        if f_norm == v_name_norm or f_norm == v_type_norm:
+            return v["voice_type"]
+
+    # 3. Khớp tiền tố hoặc chuỗi con
+    for k, vtype in FOLDER_TO_VOICE.items():
+        if f_norm.startswith(k) or k.startswith(f_norm):
+            return vtype
+
+    return None
 
 
 def print_voice_table() -> None:
@@ -120,15 +163,32 @@ def print_voice_table() -> None:
     print("-" * 92)
     for v in SUPPORTED_VOICES:
         print(f"{v['index']:<4} | {v['name']:<22} | {v['voice_type']:<40} | {v['resource_id']:<20}")
-    print("\n* Bạn có thể chọn giọng bằng: STT (1-10), ID chữ, ID số hoặc Tên hiển thị.")
+    print("\n* Bạn có thể chọn giọng bằng: 'Auto' (tự lấy theo thư mục), STT (1-10), ID chữ, ID số hoặc Tên hiển thị.")
 
 
-def resolve_voice_info(voice_input: str, client: CapCutClient) -> Tuple[str, str, str]:
+def resolve_voice_info(
+    voice_input: str,
+    client: CapCutClient,
+    output_dir: Optional[str] = None,
+) -> Tuple[str, str, str]:
     """
-    Nhận diện giọng đọc từ input (STT, ID số, ID chữ, hoặc Tên).
+    Nhận diện giọng đọc từ input (STT, ID số, ID chữ, Tên, hoặc 'Auto' để tự xác định theo thư mục output).
     Trả về tuple: (voice_type, resource_id, display_name)
     """
     raw = (voice_input or "").strip()
+
+    # Xử lý chế độ Auto
+    if raw.lower() == "auto":
+        folder = Path(output_dir or DEFAULT_OUTPUT_DIR).name
+        detected = detect_voice_from_folder(folder)
+        if detected:
+            raw = detected
+        else:
+            raise ValueError(
+                f"Chế độ Auto không thể nhận diện giọng đọc từ thư mục '{folder}'. "
+                f"Vui lòng chỉ định rõ --voice hoặc đặt DEFAULT_VOICE trong voice.py."
+            )
+
     target_lower = raw.lower()
 
     # 1. Tìm trong bảng SUPPORTED_VOICES
@@ -395,6 +455,93 @@ def verify_and_repair(
     return True
 
 
+def print_dataset_stats(metadata_path: Path, output_dir: Path, audio_format: str = "wav") -> None:
+    """
+    Thống kê chi tiết tiến độ, số lượng file audio và thời lượng thực tế của dataset.
+    """
+    print("=================================================================")
+    print("THỐNG KÊ TIẾN ĐỘ & THỜI LƯỢNG AUDIO DATASET")
+    print("=================================================================")
+    print(f"• File metadata   : {metadata_path}")
+    print(f"• Thư mục audio   : {output_dir}")
+    detected_v = detect_voice_from_folder(output_dir.name)
+    if detected_v:
+        for v in SUPPORTED_VOICES:
+            if v["voice_type"].lower() == detected_v.lower():
+                print(f"• Giọng nhận diện : {v['name']} ({v['voice_type']})")
+                break
+    print(f"• Định dạng       : {audio_format.upper()}")
+    print("-" * 65)
+
+    total_meta = 0
+    total_words = 0
+    if metadata_path.exists():
+        items = load_metadata(metadata_path, audio_format=audio_format)
+        total_meta = len(items)
+        total_words = sum(len(it["text"].split()) for it in items)
+
+    if not output_dir.exists():
+        print(f"[!] Thư mục '{output_dir}' chưa tồn tại.")
+        print(f"• Số câu trong metadata : {total_meta:,} câu ({total_words:,} tiếng)")
+        print("=" * 65)
+        return
+
+    ext = f".{audio_format.lower().lstrip('.')}"
+    audio_files = list(output_dir.glob(f"*{ext}"))
+    total_files = len(audio_files)
+
+    total_duration_sec = 0.0
+    total_size_bytes = 0
+    valid_count = 0
+    corrupt_count = 0
+
+    for f in audio_files:
+        sz = f.stat().st_size
+        total_size_bytes += sz
+        if audio_format.lower() == "wav":
+            try:
+                with wave.open(str(f), "rb") as wf:
+                    total_duration_sec += wf.getnframes() / wf.getframerate()
+                    valid_count += 1
+            except Exception:
+                corrupt_count += 1
+        else:
+            valid_count += 1
+
+    hours = total_duration_sec / 3600.0
+    minutes = total_duration_sec / 60.0
+    size_mb = total_size_bytes / (1024 * 1024)
+    avg_sec = total_duration_sec / valid_count if valid_count > 0 else 0.0
+
+    # Tính số tiếng (chữ) thực tế và số tiếng trung bình mỗi giây
+    words_for_files = 0
+    if metadata_path.exists():
+        meta_items = load_metadata(metadata_path, audio_format=audio_format)
+        meta_map = {it["stem"]: len(it["text"].split()) for it in meta_items}
+        words_for_files = sum(meta_map.get(f.stem, 0) for f in audio_files)
+    else:
+        words_for_files = 0
+
+    speech_rate = (words_for_files / total_duration_sec) if total_duration_sec > 0 and words_for_files > 0 else 0.0
+
+    print(f"• Số file audio đã tạo : {total_files:,} file" + (f" ({total_files}/{total_meta} câu - {total_files/total_meta*100:.1f}%)" if total_meta else ""))
+    if corrupt_count > 0:
+        print(f"• File lỗi/hỏng        : {corrupt_count} file [CẢNH BÁO]")
+    if audio_format.lower() == "wav":
+        print(f"• Tổng thời lượng thật : {hours:.2f} GIỜ ({minutes:.1f} phút / {total_duration_sec:,.1f} giây)")
+        print(f"• Trung bình mỗi câu   : {avg_sec:.2f} giây/câu")
+        if speech_rate > 0:
+            print(f"• Tốc độ đọc thực tế   : {speech_rate:.2f} TIẾNG/GIÂY (~{speech_rate * 60:.1f} tiếng/phút)")
+    print(f"• Tổng dung lượng đĩa  : {size_mb:.1f} MB")
+
+    if total_meta > 0 and total_files < total_meta:
+        missing = total_meta - total_files
+        print(f"• Số câu còn thiếu     : {missing:,} câu chưa tạo")
+    elif total_meta > 0 and total_files == total_meta:
+        print(f"• Trạng thái hoàn thành: [OK] Đã tạo đủ 100% ({total_files}/{total_meta} câu)")
+    print("=" * 65)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chuyển đổi metadata.csv thành audio TTS CapCut")
     parser.add_argument(
@@ -413,7 +560,7 @@ def main():
         "--batch-size",
         type=int,
         default=DEFAULT_BATCH_SIZE,
-        help=f"Số câu trong 1 lượt gọi API (Mặc định: {DEFAULT_BATCH_SIZE})",
+        help=f"Số câu trong 1 lượt gọi API (min 1, max 100, Mặc định: {DEFAULT_BATCH_SIZE})",
     )
     parser.add_argument(
         "--metadata",
@@ -447,7 +594,7 @@ def main():
         "-t",
         type=int,
         default=DEFAULT_THREADS,
-        help=f"Số luồng xử lý song song (min 1, max 5, mặc định: {DEFAULT_THREADS})",
+        help=f"Số luồng xử lý song song (min 1, max 50, mặc định: {DEFAULT_THREADS})",
     )
     parser.add_argument(
         "--timeout",
@@ -461,15 +608,30 @@ def main():
         default=None,
         help="Giới hạn số câu cần tạo trong lần chạy này (tùy chọn, hữu ích khi test)",
     )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Thống kê số file audio đã tạo, thời lượng thực tế (giờ, phút, giây), dung lượng và tiến độ rồi dừng.",
+    )
 
     args = parser.parse_args()
+
+    if args.stats:
+        print_dataset_stats(
+            metadata_path=Path(args.metadata),
+            output_dir=Path(args.output_dir),
+            audio_format=args.format,
+        )
+        return
 
     if args.list_voices:
         print_voice_table()
         return
 
-    # Giới hạn chặt chẽ: min 1 luồng, max 5 luồng
-    threads = max(1, min(5, args.threads))
+    # Giới hạn an toàn: min 1 luồng, max 50 luồng
+    threads = max(1, min(50, args.threads))
+    # Giới hạn batch: min 1 câu, max 100 câu
+    batch_size = max(1, min(100, args.batch_size))
 
     metadata_path = Path(args.metadata)
     output_dir = Path(args.output_dir)
@@ -479,13 +641,19 @@ def main():
     print("CapCut TTS - Chuyển đổi hàng loạt từ metadata.csv")
     print("=========================================================")
 
-    # 1. Khởi tạo client & nhận diện giọng đọc (hỗ trợ cả ID số, ID chữ, tên, STT)
+    # 1. Khởi tạo client & nhận diện giọng đọc (hỗ trợ cả ID số, ID chữ, tên, STT, hoặc Auto)
     client = CapCutClient()
-    voice_type, resource_id, display_name = resolve_voice_info(args.voice, client)
-    print(f"Giọng đọc   : {display_name}")
+    voice_type, resource_id, display_name = resolve_voice_info(
+        voice_input=args.voice,
+        client=client,
+        output_dir=args.output_dir,
+    )
+    is_auto = (args.voice or "").strip().lower() == "auto"
+    auto_tag = f" [Tự nhận diện từ '{output_dir.name}']" if is_auto else ""
+    print(f"Giọng đọc   : {display_name}{auto_tag}")
     print(f"ID chữ      : {voice_type}")
     print(f"ID số       : {resource_id}")
-    print(f"Cấu hình    : Batch={args.batch_size} câu/lần | Luồng={threads} | Delay={args.delay}s | Tốc độ={args.rate} | Định dạng={args.format.upper()}")
+    print(f"Cấu hình    : Batch={batch_size} câu/lần | Luồng={threads} | Delay={args.delay}s | Tốc độ={args.rate} | Định dạng={args.format.upper()}")
 
     # 2. Đọc metadata
     all_items = load_metadata(metadata_path, audio_format=args.format)
@@ -521,8 +689,8 @@ def main():
 
     # 4. Chia batch không trùng lặp, không đè lên nhau
     batches = [
-        pending_items[i : i + args.batch_size]
-        for i in range(0, len(pending_items), args.batch_size)
+        pending_items[i : i + batch_size]
+        for i in range(0, len(pending_items), batch_size)
     ]
     total_batches = len(batches)
     processed_count = completed_count
