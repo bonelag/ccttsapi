@@ -352,7 +352,7 @@ with gr.Blocks(title="CapCut TTS & STT Studio") as demo:
                         )
                         custom_voice_input = gr.Textbox(
                             label="ID giọng khác (Tuỳ chọn)",
-                            placeholder="Ví dụ: BV421_vivn_streaming hoặc 7252594014782755330",
+                            placeholder="Ví dụ: BV421_vivn_streaming",
                         )
 
                     with gr.Row():
@@ -368,14 +368,14 @@ with gr.Blocks(title="CapCut TTS & STT Studio") as demo:
 
                     with gr.Row():
                         speed_slider = gr.Slider(
-                            label="Tốc độ đọc (Time-stretch giữ nguyên cao độ)",
+                            label="Tốc độ đọc",
                             minimum=0.5,
                             maximum=2.0,
                             value=1.0,
                             step=0.05,
                         )
                         volume_slider = gr.Slider(
-                            label="Âm lượng (Volume)",
+                            label="Âm lượng",
                             minimum=0.2,
                             maximum=2.0,
                             value=1.0,
