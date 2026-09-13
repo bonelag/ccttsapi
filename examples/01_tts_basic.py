@@ -25,7 +25,7 @@ def main():
     client = CapCutClient()
 
     # Text to convert to speech
-    text = "xin chào bạn, đây là giọng nói nghe thử nghiệm"
+    text = "Hello bạn, đây là giọng stream nói nghe thử nghiệm"
 
     # Specify voice_type (e.g. "BV421_vivn_streaming" or "BV074_streaming")
     voice_type_input = "BV074_streaming"

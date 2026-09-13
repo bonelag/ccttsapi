@@ -333,7 +333,7 @@ with gr.Blocks(title="CapCut TTS & STT Studio") as demo:
                         label="Văn bản cần đọc",
                         placeholder="Nhập đoạn văn bản tiếng Việt cần đọc vào đây...",
                         lines=6,
-                        value="Chào bạn! Chào mừng bạn đến với hệ thống chuyển văn bản thành giọng nói chất lượng cao 24kHz của CapCut.",
+                        value="Chào bạn! Chào mừng bạn đến với hệ thống chuyển văn bản thành giọng nói chất lượng cao của CapCut.",
                     )
 
                     with gr.Row():
@@ -351,7 +351,7 @@ with gr.Blocks(title="CapCut TTS & STT Studio") as demo:
                             value=VOICE_CHOICES[0],
                         )
                         custom_voice_input = gr.Textbox(
-                            label="Hoặc nhập ID giọng riêng (Tuỳ chọn)",
+                            label="ID giọng khác (Tuỳ chọn)",
                             placeholder="Ví dụ: BV421_vivn_streaming hoặc 7252594014782755330",
                         )
 
