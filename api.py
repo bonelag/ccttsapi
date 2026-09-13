@@ -42,7 +42,7 @@ if str(CAPI_DIR) not in sys.path:
     sys.path.insert(0, str(CAPI_DIR))
 
 from capcut_tts_api import CapCutClient, CapCutError
-from voice import SUPPORTED_VOICES, resolve_voice_info
+from dataset.voice import SUPPORTED_VOICES, resolve_voice_info
 
 app = FastAPI(
     title="CapCut TTS & STT - OpenAI Compatible API",
