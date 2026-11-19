@@ -35,6 +35,18 @@ Install the local web interfaces with `python -m pip install -e ".[web]"`.
 Install ffmpeg separately for audio conversion, speed/volume changes, and merging.
 The updated voice catalog is packaged at `capcut_tts_api/Voice.json`.
 
+The Gradio studio adapts to desktop and mobile screens and includes speech with
+optional SRT, media transcription, media-to-translated-subtitles with original
+and translated SRT downloads, SRT-to-MP3 (one file or a ZIP of cue audio), voice
+catalogs, per-session connection settings, task inspection, and draft-action
+JSON export. Translation currently requires source audio/video; the SDK does
+not expose direct text-only SRT translation. SRT audio retains original timing
+metadata but is not automatically stretched/aligned to cue durations.
+Generated job directories are kept for 24 hours and expired when a new job
+starts; Gradio also expires its served file cache. Download results you need to keep.
+
+Run `python -m pytest -q tests` for the offline SDK and studio regression suite.
+
 ## Install
 
 Python 3.9 or newer is required.
