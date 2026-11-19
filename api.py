@@ -41,13 +41,13 @@ CAPI_DIR = Path(__file__).resolve().parent
 if str(CAPI_DIR) not in sys.path:
     sys.path.insert(0, str(CAPI_DIR))
 
-from capcut_tts_api import CapCutClient, CapCutError
+from capcut_tts_api import CapCutClient, CapCutError, __version__
 from dataset.voice import SUPPORTED_VOICES, resolve_voice_info
 
 app = FastAPI(
     title="CapCut TTS & STT - OpenAI Compatible API",
     description="Máy chủ API chuyển đổi giọng nói (TTS) và phiên âm (STT) tương thích chuẩn OpenAI Audio API.",
-    version="1.0.0",
+    version=__version__,
 )
 
 app.add_middleware(
@@ -222,7 +222,7 @@ print("Đã lưu speech.wav thành công!")</code></pre>
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "capcut-tts-api", "version": "1.0.0"}
+    return {"status": "ok", "service": "capcut-tts-api", "version": __version__}
 
 
 @app.get("/v1/models")

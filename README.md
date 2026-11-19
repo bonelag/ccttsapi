@@ -1,271 +1,330 @@
-# CapCut TTS & STT Python API (`capcut-tts-api`)
+<p align="center"><strong>English</strong> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.zh-CN.md">简体中文</a></p>
 
-[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
-[![Audio](https://img.shields.io/badge/Audio-24kHz%2016--bit%20PCM%20WAV-blue?style=flat&logo=audacity&logoColor=white)](https://github.com)
-[![Pure Python](https://img.shields.io/badge/Dependency-Pure%20Python%20(Requests)-brightgreen?style=flat)](https://github.com)
-[![Concurrency](https://img.shields.io/badge/Concurrency-1--5%20Threads-orange?style=flat)](https://github.com)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
-Bộ thư viện Python chuẩn hoá và công cụ tự động hóa toàn diện cho hệ sinh thái tác vụ của **CapCut**:
-- **Chuyển đổi văn bản thành giọng nói (Text-to-Speech - TTS)**: Tạo âm thanh studio chất lượng cao chuẩn **24kHz 16-bit Mono PCM WAV** hoặc MP3, tự động nhận diện và ghép nối `voice_type` với `resource_id`.
-- **Tự động hoá tạo Dataset hàng loạt (`voice.py`)**: Đa luồng (1–5 luồng), chia batch thông minh, tự động resume tiếp tục tiến độ, kiểm soát timeout và tự sửa file lỗi.
-- **Nhận diện giọng nói & trích xuất phụ đề (Speech-to-Text - STT)**: Phiên âm tự động từ audio/video với mốc thời gian chi tiết từng từ và từng câu.
-- **Tải lên media VOD phân đoạn**: Upload chunked an toàn với chữ ký bảo mật AWS SigV4.
-- **Thuần Python 100%**: Không phụ thuộc thư viện nhị phân C/C++ (`.dll`, `.so`, `.dylib`), không dùng `ctypes`. Toàn bộ thuật toán mã hoá RSA PKCS#1 v1.5 và chữ ký AWS SigV4 được viết trực tiếp bằng Python tiêu chuẩn.
+<h1 align="center">CapCut TTS &amp; STT API</h1>
+<p align="center"><strong>Python SDK for CapCut speech tasks</strong></p>
+<p align="center">Text to speech · Speech recognition · Translation · SRT · Voice catalog</p>
 
 ---
 
-## Mục lục
+## Features
 
-1. [Cài đặt](#1-cài-đặt-installation)
-2. [Công cụ tạo Dataset hàng loạt (`voice.py`)](#2-công-cụ-tạo-dataset-hàng-loạt-voicepy)
-3. [Danh sách giọng đọc tiếng Việt hỗ trợ](#3-danh-sách-giọng-đọc-tiếng-việt-hỗ-trợ)
-4. [Hướng dẫn sử dụng Python SDK](#4-hướng-dẫn-sử-dụng-python-sdk)
-   - [Tạo giọng nói TTS](#41-tạo-giọng-nói-tts)
-   - [Nhận diện phụ đề STT](#42-nhận-diện-phụ-đề-stt)
-   - [Tra cứu danh mục giọng đọc](#43-tra-cứu-danh-mục-giọng-đọc)
-   - [Tuỳ biến cấu hình thiết bị (Device Identity)](#44-tuỳ-biến-cấu-hình-thiết-bị-device-identity)
-5. [Hướng dẫn dòng lệnh CLI](#5-hướng-dẫn-dòng-lệnh-cli)
-6. [Cấu trúc mã nguồn](#6-cấu-trúc-mã-nguồn)
-7. [Lưu ý & Trách nhiệm](#7-lưu-ý--trách-nhiệm)
+`capcut-tts-api` exposes a Python client for the speech workflows implemented by the package:
 
----
+- create and poll a TTS task, then download the audio artifact returned by the service;
+- upload a local audio or video file, submit STT, and parse utterance and word timings;
+- request translation during STT and write the returned translated text to SRT;
+- read an SRT file and create one audio file per cue or one combined audio file;
+- inspect the voice and language data shipped inside `capcut_tts_api`.
 
-## 1. Cài đặt (Installation)
+The examples below call the package directly. They do not depend on the command-line parser.
 
-Yêu cầu môi trường **Python 3.9** trở lên.
+## Local fork additions
 
-```bash
-# Cách 1: Cài đặt package dạng editable trực tiếp
-pip install -e .
+This checkout also retains the OpenAI-compatible FastAPI server (`python api.py`),
+Gradio interface (`python app.py`), dataset tools, and runnable examples. See
+[the local guide](README.local.md) for the fork's original usage documentation.
+Dataset scripts are in `dataset/`; run them from that directory.
 
-# Cách 2: Cài thư viện phụ thuộc tối thiểu
-pip install requests
+The SDK keeps the fork's `rate` and `audio_format` arguments, legacy
+`extract_speech_urls()` and `download_file()` helpers, and WAV cache/conversion
+handling. Existing positional argument order is preserved; pass the upstream
+`payload_sign` override by keyword. New SRT, translation, artifact download,
+custom origin, and credential/header features remain available.
+
+Install the local web interfaces with `python -m pip install -e ".[web]"`.
+Install ffmpeg separately for audio conversion, speed/volume changes, and merging.
+The updated voice catalog is packaged at `capcut_tts_api/Voice.json`.
+
+## Install
+
+Python 3.9 or newer is required.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
 ```
 
----
+## Python quick start
 
-## 2. Công cụ tạo Dataset hàng loạt (`voice.py`)
-
-File `voice.py` là script tự động hoá hoàn chỉnh để đọc file nhãn `metadata.csv` và tải toàn bộ các file audio tương ứng:
-
-```bash
-# Chạy với cấu hình mặc định (3 luồng, định dạng WAV 24kHz)
-python voice.py
-
-# Chạy tối đa 5 luồng song song, batch 10 câu/lần
-python voice.py --voice "HoatNgon" --output-dir "HoatNgon" -t 5 --batch-size 10
-
-# Chạy 1 luồng tuần tự (thích hợp mạng yếu hoặc kiểm thử)
-python voice.py --voice "BanMai" --output-dir "BanMai" -t 1
-
-# Kiểm tra danh sách các giọng đọc được hỗ trợ
-python voice.py --list-voices
-```
-
-### Điểm nổi bật của `voice.py`:
-- **Đa luồng an toàn (1 đến 5 luồng)**: Mỗi luồng xử lý 1 batch riêng biệt, cô lập phiên kết nối (thread-isolated `CapCutClient`), không trùng lặp câu, không đè file.
-- **Tự động Resume**: Tự quét thư mục đích, bỏ qua các file đã tạo hợp lệ (> 0 bytes) và chỉ tải tiếp những câu còn thiếu.
-- **Ghi file nguyên tử (Atomic Write)**: Tải qua file tạm `.tmp_<filename>` trước khi đổi tên, ngăn chặn file rác hoặc file hỏng khi bị ngắt đột ngột (`Ctrl+C`).
-- **Kiểm soát Timeout & Tự sửa**: Tự động tính toán timeout linh hoạt theo độ dài batch, tự gom các câu bị lỗi để tạo lại ở lượt cuối, đảm bảo dữ liệu đầu ra đạt chuẩn 100%.
-
----
-
-## 3. Danh sách giọng đọc tiếng Việt hỗ trợ
-
-Hệ thống hỗ trợ chọn giọng linh hoạt bằng **Tên hiển thị**, **STT (1–10)**, **ID chữ (Voice Type)** hoặc **ID số (Resource ID)**:
-
-| STT | Tên hiển thị | ID chữ (`voice_type`) | ID số (`resource_id`) | Đặc trưng giọng |
-| :---: | :--- | :--- | :--- | :--- |
-| **1** | **Nhỏ Ngọt Ngào** | `BV421_vivn_streaming` | `7252594014782755330` | Nữ miền Nam ngọt ngào, ấm áp, tự nhiên |
-| **2** | **Giọng Nữ Phổ Thông** | `vi_female_huong` | `7264854897953083905` | Nữ chuẩn phát thanh viên, sách nói, tin tức |
-| **3** | **Giọng Bé** | `BV074_streaming_dsp` | `7550087831092251920` | Giọng trẻ em, trong sáng, hồn nhiên |
-| **4** | **Cô Gái Hoạt Ngôn** | `BV074_streaming` | `7102355709945188865` | Nữ hoạt bát, năng động, lôi cuốn |
-| **5** | **Hoai My** | `vi-VN-HoaiMyNeural` | `7371666434650280464` | Nữ truyền cảm, ngữ điệu mượt mà |
-| **6** | **Nam Minh** | `vi-VN-NamMinhNeural` | `7371666524727153168` | Nam chuẩn giọng phổ thông, rõ ràng, dứt khoát |
-| **7** | **Việt Méo** | `BV075_streaming_vibrato_dsp` | `7569450639810465040` | Nam vui nhộn, cá tính, biểu cảm phong phú |
-| **8** | **Mai** | `BV562_streaming` | `7483736254694035984` | Nữ ấm áp, chững chạc, phát thanh |
-| **9** | **Ban Mai** | `multi_female_yangguangnv_uranus_bigtts` | `7637456432522218773` | Nữ dịu dàng, tự nhiên, nhịp điệu êm ái |
-| **10** | **Review Phim new** | `multi_female_richgirl_uranus_bigtts` | `7637460351541447956` | Nữ phong cách review phim, kịch tính |
-
----
-
-## 4. Hướng dẫn sử dụng Python SDK
-
-### 4.1. Tạo giọng nói TTS
-
-Tự động nhận diện `resource_id` tương ứng từ `Voice.json` khi bạn truyền `voice_type` hoặc tên giọng:
+### 1. Create a client and inspect voices
 
 ```python
 from capcut_tts_api import CapCutClient
 
-client = CapCutClient()
+client = CapCutClient(timeout=60)
 
-# 1. Tạo audio chuẩn WAV không nén (16-bit 24kHz Mono PCM)
-result = client.generate_speech(
-    texts="Xin chào! Đây là âm thanh chất lượng cao 24kHz được tạo bởi CapCut API.",
-    voice="BV421_vivn_streaming",  # Hoặc "Nhỏ Ngọt Ngào"
-    rate="1.0",
-    audio_format="wav",            # "wav" hoặc "mp3"
-    wait=True
-)
+# VoiceInfo objects are loaded from capcut_tts_api/Voice.json.
+for item in client.list_voices(lang="vi-VN")[:5]:
+    print(item.voice_type, item.display_name, item.resource_id)
 
-# 2. Lấy danh sách URL âm thanh trả về và tải file
-urls = client.extract_speech_urls(result)
-for idx, url in enumerate(urls, start=1):
-    client.download_file(url, f"output_{idx}.wav")
-    print(f"Đã lưu: output_{idx}.wav")
+# A voice_type, display name, or explicit resource ID can be resolved.
+voice_type, resource_id = client.resolve_voice("BV421_vivn_streaming")
+print(voice_type, resource_id)
 ```
 
-#### Gửi nhiều câu trong cùng 1 Request (Batch API):
-```python
-texts = [
-    "Câu thứ nhất trong danh sách.",
-    "Câu thứ hai tiếp theo.",
-    "Câu thứ ba kết thúc đoạn."
-]
+`list_voices()` reads the local catalog and does not contact the service. The catalog can be stale; the service still decides whether an account may use a voice.
 
-result = client.generate_speech(
-    texts=texts,
-    voice="BV074_streaming",
-    audio_format="wav",
-    wait=True
-)
-urls = client.extract_speech_urls(result)
-print(f"Đã tạo thành công {len(urls)} file audio!")
-```
-
----
-
-### 4.2. Nhận diện phụ đề STT
-
-Tự động tải lên file âm thanh/video, tạo tác vụ nhận diện lời nói và bóc tách phụ đề kèm mốc thời gian chính xác:
+### 2. Generate speech and save the returned artifact
 
 ```python
 from capcut_tts_api import CapCutClient
 
-client = CapCutClient()
+client = CapCutClient(timeout=60)
+result = client.generate_speech(
+    "Hello from the Python API.",
+    voice="BV421_vivn_streaming",
+    timeout=180,
+)
+audio_path = client.download_tts_audio(result, "hello.mp3")
+print(f"saved {audio_path}")
+```
 
-# Tải lên media và chờ kết quả phiên âm
-res = client.transcribe_file(
-    file_path="audio_sample.mp3",
+`generate_speech()` waits for a completed task by default. Set `wait=False` when the caller wants to manage polling:
+
+```python
+created = client.generate_speech("A queued task", voice="BV421_vivn_streaming", wait=False)
+task = created["data"]["tasks"][0]
+
+import time
+deadline = time.monotonic() + 180
+while time.monotonic() < deadline:
+    completed = client.query_tts_task(
+        task["id"], task["token"], task.get("bind_id", "")
+    )
+    status = (completed.get("data", {}).get("tasks") or [{}])[0].get("status", "")
+    if status.lower() in {"success", "succeed", "succeeded", "completed", "done"}:
+        break
+    if status.lower() in {"failed", "failure", "error"}:
+        raise RuntimeError(f"TTS task failed: {completed}")
+    time.sleep(1)
+else:
+    raise TimeoutError("TTS task did not complete before the deadline")
+
+audio_path = client.download_tts_audio(completed, "queued-task.mp3")
+print(status, audio_path)
+```
+
+The query call above is normally repeated until the task status is successful. `download_tts_audio()` accepts the completed response and writes the URL found in the response artifact.
+
+### 3. Transcribe a file and write source-language SRT
+
+```python
+from capcut_tts_api import CapCutClient
+
+client = CapCutClient(timeout=60)
+stt = client.transcribe_file(
+    "recording.mp3",
     language="vi-VN",
-    use_translation=False,
-    wait=True
+    timeout=180,
 )
-
-# Bóc tách phụ đề có cấu trúc
-subtitles = client.extract_subtitles(res)
-
-print("Toàn bộ nội dung:", subtitles.full_text)
-print("-" * 50)
-for item in subtitles.utterances:
-    print(f"[{item.start_time}ms -> {item.end_time}ms] {item.text}")
+subtitles = client.extract_subtitles(stt)
+subtitles.write_srt("recording.vi.srt")
+print(subtitles.full_text)
 ```
 
----
+`transcribe_file()` uploads the media, creates the STT task, polls it, and returns the completed response. Use `wait=False` to receive the creation response instead.
 
-### 4.3. Tra cứu danh mục giọng đọc
+### 4. Request translation and write translated SRT
+
+```python
+translated = client.transcribe_file(
+    "recording.mp3",
+    language="vi-VN",
+    translation_language="en-US",
+    use_translation=True,
+    timeout=180,
+)
+client.write_srt(translated, "recording.en.srt", use_translation=True)
+```
+
+Translation text is taken from the completed response. If the service returns no `translation_text` values, the SDK cannot invent a translation.
+
+### 5. Create speech from an SRT file
+
+```python
+# One downloaded artifact for every non-empty cue.
+parts = client.generate_speech_from_srt(
+    "captions.srt",
+    voice="BV421_vivn_streaming",
+    output_dir="voice-parts",
+    part=True,
+)
+print(parts["cues"])
+
+# One request and one downloaded artifact containing all cue text.
+combined = client.generate_speech_from_srt(
+    "captions.srt",
+    voice="BV421_vivn_streaming",
+    audio_path="captions.mp3",
+    part=False,
+)
+print(combined["audio_path"])
+```
+
+Cue start/end times are retained in the returned metadata. The method does not alter the source SRT or fabricate timing information.
+
+### 6. Generate speech, then transcribe the same file
+
+```python
+result = client.generate_speech_and_transcribe(
+    "Xin chào từ CapCut.",
+    voice="BV421_vivn_streaming",
+    audio_path="roundtrip.mp3",
+    srt_path="roundtrip.srt",
+    language="vi-VN",
+)
+print(result["audio_path"], result["srt_path"])
+```
+
+### Error handling
+
+```python
+from capcut_tts_api import CapCutAPIError, CapCutError, CapCutTaskError
+
+try:
+    client.generate_speech("test", voice="BV421_vivn_streaming", timeout=180)
+except CapCutTaskError as exc:
+    print(f"task failed or timed out: {exc}")
+except CapCutAPIError as exc:
+    print(f"service error: {exc}")
+except CapCutError as exc:
+    print(f"client error: {exc}")
+```
+
+## API reference and task commands
+
+The high-level methods cover most programs. These lower-level calls are useful when a worker stores task IDs and polls them later.
 
 ```python
 from capcut_tts_api import CapCutClient
 
-client = CapCutClient()
+client = CapCutClient(timeout=60)
 
-# Tra cứu các giọng tiếng Việt có sẵn
-voices = client.list_voices(lang="vi-VN")
+# Submit TTS without the convenience polling loop.
+created = client.create_tts_task(
+    ["First segment", "Second segment"],
+    voice="BV421_vivn_streaming",
+)
+task = created["data"]["tasks"][0]
 
-for v in voices:
-    print(f"{v.display_name:<20} | Type: {v.voice_type:<35} | ID: {v.resource_id}")
+# Call this later (and repeat while the task is queued/running).
+tts_result = client.query_tts_task(
+    task_id=task["id"],
+    token=task["token"],
+    bind_id=task.get("bind_id", ""),
+)
+print(tts_result)
+
+# Read artifact metadata before downloading a selected artifact.
+for artifact in client.extract_tts_artifacts(tts_result):
+    print(artifact)
 ```
 
----
-
-### 4.4. Tuỳ biến cấu hình thiết bị (Device Identity)
-
-Có thể cấu hình định danh thiết bị linh hoạt qua mã Python hoặc nạp từ file JSON:
+For an STT worker, upload and query explicitly:
 
 ```python
-from capcut_tts_api import CapCutClient, DeviceConfig
-
-custom_device = DeviceConfig(
-    device_id="7647183892936328721",
-    iid="7647185302080423697",
-    appvr="8.7.0",
-    loc="VN",
-    lan="vi-VN"
+upload = client.upload_audio("recording.mp3")
+created = client.create_stt_task(
+    audio_vid=upload.vid,
+    audio_md5=upload.md5,
+    duration_ms=upload.duration_ms,
+    language="vi-VN",
+    translation_language="en-US",
+    use_translation=True,
 )
-
-# Khởi tạo client với cấu hình riêng
-client = CapCutClient(device=custom_device)
-
-# Hoặc nạp trực tiếp từ file device.json
-# client = CapCutClient(device="device.json")
+task = created["data"]["tasks"][0]
+stt_result = client.query_stt_task(task["id"], task["token"], task.get("bind_id", ""))
+subtitles = client.extract_subtitles(stt_result)
+subtitles.write_srt("recording.en.srt", use_translation=True)
 ```
 
----
+Request builders are available when an application needs to inspect or log a request before sending it:
 
-## 5. Hướng dẫn dòng lệnh CLI
+```python
+url, headers, body = client.build_tts_new_request(
+    "Preview only", voice="BV421_vivn_streaming"
+)
+print(url, headers, body)
 
-Sau khi cài đặt, bạn có thể gọi trực tiếp lệnh `capcut-tts-api` hoặc `python -m capcut_tts_api.cli`:
-
-```bash
-# 1. Liệt kê danh sách giọng đọc tiếng Việt
-capcut-tts-api list-voices --language vi-VN
-
-# 2. Tạo tác vụ TTS mới
-capcut-tts-api tts-new \
-  --text "Xin chào thế giới" \
-  --voice "BV421_vivn_streaming" \
-  --rate 1.0
-
-# 3. Tra vấn trạng thái tác vụ TTS
-capcut-tts-api tts-query \
-  --task-id "TASK_ID" \
-  --token "TOKEN"
-
-# 4. Tải lên và nhận diện phụ đề STT một bước
-capcut-tts-api stt-file \
-  --audio-file "audio.mp4" \
-  --language vi-VN \
-  --out "result.json"
-
-# 5. Chế độ Dry-Run (Xem trước payload và chữ ký bảo mật mà không gọi API thật)
-capcut-tts-api tts-new \
-  --text "Kiểm tra chữ ký" \
-  --voice "BV421_vivn_streaming" \
-  --dry-run
+stt_url, stt_headers, stt_body = client.build_stt_new_request(
+    audio_vid="uploaded-vid",
+    audio_md5="uploaded-md5",
+    duration_ms=10_000,
+    language="vi-VN",
+)
 ```
 
----
+`create_tts_task()` and `create_stt_task()` send requests; `build_*` methods only return request data. `upload_audio()` sends the media upload and returns an `UploadResult` containing `vid`, `md5`, duration, size, and format.
 
-## 6. Cấu trúc mã nguồn
+## Optional command-line use
 
-```text
-capi/
-├── capcut_tts_api/              # Thư viện lõi (Core Python Package)
-│   ├── __init__.py              # Export SDK & phiên bản
-│   ├── client.py                # Lớp CapCutClient chính (TTS, STT, Upload)
-│   ├── signer.py                # Mã hoá RSA PKCS#1 v1.5, AWS SigV4, MD5 & tạo chữ ký
-│   ├── uploader.py              # Xử lý upload media chunked lên VOD CapCut
-│   ├── models.py                # Dataclasses định kiểu (DeviceConfig, Utterance,...)
-│   ├── config.py                # URL endpoints, hằng số VOD, public key RSA
-│   ├── exceptions.py            # Hệ thống phân cấp lỗi (CapCutError, CapCutTaskError)
-│   └── cli.py                   # Bộ phân tích tham số dòng lệnh CLI
-├── examples/                    # Các kịch bản mẫu sẵn sàng chạy
-│   ├── 01_tts_basic.py          # Mẫu tạo TTS cơ bản
-│   ├── 02_stt_transcribe.py     # Mẫu nhận diện phụ đề STT
-│   ├── 03_voice_catalog.py      # Mẫu tra cứu giọng đọc
-│   └── 04_custom_device.py      # Mẫu tuỳ biến thiết bị
-├── voice.py                     # Script tạo dataset TTS hàng loạt (Đa luồng, Resume, Repair)
-├── metadata.csv                 # 1,350 câu văn bản mẫu chuẩn hoá 100% tiếng Việt
-├── Voice.json                   # Danh mục thư viện giọng đọc CapCut
-└── pyproject.toml               # Cấu hình cài đặt module chuẩn PEP 517
+The same client is available as `capcut-tts-api` or `python -m capcut_tts_api.cli`. Use `--help` for the installed version's modes and arguments. Typical calls are:
+
+```powershell
+python -m capcut_tts_api.cli list-voices --language vi-VN
+python -m capcut_tts_api.cli tts-new --text "Hello" --voice BV421_vivn_streaming
+python -m capcut_tts_api.cli tts-srt --srt-file captions.srt --voice BV421_vivn_streaming --part --output-dir voice-parts
+python -m capcut_tts_api.cli tts-srt --srt-file captions.srt --voice BV421_vivn_streaming --no-part --audio-out captions.mp3
+python -m capcut_tts_api.cli stt-file --audio-file recording.mp3 --language vi-VN --srt-out recording.srt
+python -m capcut_tts_api.cli translate --audio-file recording.mp3 --language vi-VN --translation-language en-US --srt-out recording.en.srt
+python -m capcut_tts_api.cli tts-query --task-id TASK_ID --token TASK_TOKEN
+python -m capcut_tts_api.cli stt-query --task-id TASK_ID --token TASK_TOKEN
+python -m capcut_tts_api.cli upload-audio --audio-file recording.mp3
+python -m capcut_tts_api.cli stt-new --audio-vid VOD_ID --audio-md5 MD5 --duration-ms 10000 --language vi-VN
 ```
 
----
+Common service modes are `list-voices`, `tts-new`, `tts-query`, `tts-srt`, `upload-audio`, `stt-new`, `stt-query`, `stt-file`, and `translate`. `stt-new` needs a previously uploaded `--audio-vid` and `--audio-md5`; `upload-audio` prints those values. Run `python -m capcut_tts_api.cli --help` for the complete mode list and `python -m capcut_tts_api.cli MODE --help` for that mode's arguments. For reusable programs, prefer the Python methods above: they return dictionaries and model objects instead of requiring output parsing.
 
-## 7. Lưu ý & Trách nhiệm
+## Package data and implementation
 
-- Thư viện được phát triển phục vụ mục đích nghiên cứu, học tập, thu thập và xây dựng các bộ dữ liệu giọng nói mở.
-- Vui lòng tuân thủ điều khoản dịch vụ của nhà cung cấp dịch vụ gốc khi sử dụng với tần suất lớn.
+All package references in this section are inside [`capcut_tts_api/`](capcut_tts_api):
+
+| File | Purpose |
+|---|---|
+| [`Voice.json`](capcut_tts_api/Voice.json) | Local voice records, display names, service IDs, resource IDs, and language fields. |
+| [`language.json`](capcut_tts_api/language.json) | Language records available to the package's catalog helpers. |
+| [`client.py`](capcut_tts_api/client.py) | Client construction, TTS/STT requests, polling, downloads, and SRT workflows. |
+| [`models.py`](capcut_tts_api/models.py) | `DeviceConfig`, `VoiceInfo`, subtitle, utterance, and word models. |
+| [`config.py`](capcut_tts_api/config.py) | Default request origin and device profile. |
+| [`signer.py`](capcut_tts_api/signer.py) | Request signing and header helpers used internally by the client. |
+| [`uploader.py`](capcut_tts_api/uploader.py) | Media upload flow used before STT. |
+| [`exceptions.py`](capcut_tts_api/exceptions.py) | Public exception classes. |
+| [`__init__.py`](capcut_tts_api/__init__.py) | Public imports and package version. |
+
+Useful public methods are `list_voices`, `resolve_voice`, `build_tts_new_request`, `create_tts_task`, `generate_speech`, `query_tts_task`, `extract_tts_artifacts`, `download_tts_audio`, `upload_audio`, `build_stt_new_request`, `create_stt_task`, `query_stt_task`, `transcribe_file`, `extract_subtitles`, `write_srt`, `generate_speech_from_srt`, and `generate_speech_and_transcribe`.
+
+<h2 align="center">🔧 TNKRE developer tools</h2>
+
+<div align="center">
+  <a href="https://tnkre.dev/"><strong>tnkre.dev</strong></a><br>
+  <sub>TNKRE developer tools and resources</sub>
+  <br><br>
+  <a href="https://decompile.tnkre.dev/"><strong>decompile.tnkre.dev</strong></a><br>
+  <sub>Python <code>.pyc</code> decompilation and PyArmor analysis</sub>
+</div>
+
+These are external reference services, not package dependencies. Do not upload private source, credentials, or user media without authorization.
+
+## Troubleshooting
+
+- A non-zero API return value is raised as `CapCutAPIError`; inspect its `response_data`.
+- If no artifact URL is present, inspect the completed response passed to `extract_tts_artifacts()`; the downloader only uses URL fields returned by the service.
+- If a voice is rejected, verify the service ID and account/region availability. `Voice.json` is a local reference.
+- If a translated SRT is empty, confirm `use_translation=True` and inspect whether the response contains `translation_text`.
+
+<h2 align="center">📣 Help spread the word</h2>
+
+If you build a tool, tutorial, or project with this package, please consider sharing it with others and mentioning the repository. A star, recommendation, or bit of feedback helps more developers discover the project and supports its continued development.
+
+<p align="center"><a href="https://github.com/K07VN/capcut-tts-api"><strong>Share the repository</strong></a></p>
+
+<h2 align="center">⭐ Star History</h2>
+
+<a href="https://www.star-history.com/?repos=k07vn%2Fcapcut-tts-api&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=k07vn/capcut-tts-api&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=k07vn/capcut-tts-api&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=k07vn/capcut-tts-api&type=date&legend=top-left" />
+ </picture>
+</a>
